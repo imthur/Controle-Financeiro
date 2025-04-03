@@ -1,27 +1,250 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <title>Dashboard Financeiro</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Inclusão da biblioteca Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .chart-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-around;
+            margin-top: 20px;
+        }
+        .chart-box {
+            width: 45%;
+            min-width: 300px;
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            background-color: white;
+            box-shadow: 0 0 5px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .summary {
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .summary span {
+            font-weight: bold;
+            margin: 0 15px;
+        }
+        .balance-positive {
+            color: green;
+        }
+        .balance-negative {
+            color: red;
+        }
+    </style>
 </head>
 <body>
-    <canvas id="financeChart"></canvas>
+    <div class="container">
+        <h1>Dashboard Financeiro</h1>
+        
+        <!-- Área de resumo -->
+        <div class="summary">
+            <span>Receitas: <span id="totalReceitas">R$ 0,00</span></span>
+            <span>Despesas: <span id="totalDespesas">R$ 0,00</span></span>
+            <span>Saldo: <span id="saldoTotal">R$ 0,00</span></span>
+        </div>
+        
+        <!-- Containers para os gráficos -->
+        <div class="chart-container">
+            <div class="chart-box">
+                <canvas id="pieChart"></canvas>
+            </div>
+            <div class="chart-box">
+                <canvas id="barChart"></canvas>
+            </div>
+        </div>
+    </div>
+
     <script>
+        // Função para formatar valores monetários
+        function formatMoney(value) {
+            return 'R$ ' + value.toFixed(2).replace('.', ',');
+        }
+        
+        // Função para agrupar transações por mês
+        function groupByMonth(transactions) {
+            const months = {};
+            
+            transactions.forEach(t => {
+                // Extrai o mês da data (formato: YYYY-MM-DD)
+                const date = new Date(t.data);
+                const monthKey = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+                const monthName = date.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+                
+                // Inicializa o mês se não existir
+                if (!months[monthKey]) {
+                    months[monthKey] = {
+                        name: monthName,
+                        receitas: 0,
+                        despesas: 0
+                    };
+                }
+                
+                // Soma valores por tipo
+                if (t.tipo === 'R') {
+                    months[monthKey].receitas += parseFloat(t.valor);
+                } else if (t.tipo === 'D') {
+                    months[monthKey].despesas += parseFloat(t.valor);
+                }
+            });
+            
+            // Converte para array e ordena por mês
+            return Object.values(months).sort((a, b) => 
+                new Date(a.name) - new Date(b.name)
+            );
+        }
+        
+        // Busca os dados da API
         fetch('/api/transacoes/')
         .then(response => response.json())
         .then(data => {
+            // Cálculo dos totais
             let receitas = data.filter(t => t.tipo === 'R').reduce((sum, t) => sum + parseFloat(t.valor), 0);
             let despesas = data.filter(t => t.tipo === 'D').reduce((sum, t) => sum + parseFloat(t.valor), 0);
+            let saldo = receitas - despesas;
             
-            new Chart(document.getElementById('financeChart'), {
+            // Atualiza o resumo
+            document.getElementById('totalReceitas').textContent = formatMoney(receitas);
+            document.getElementById('totalDespesas').textContent = formatMoney(despesas);
+            
+            const saldoElement = document.getElementById('saldoTotal');
+            saldoElement.textContent = formatMoney(saldo);
+            if (saldo >= 0) {
+                saldoElement.className = 'balance-positive';
+            } else {
+                saldoElement.className = 'balance-negative';
+            }
+            
+            // Gráfico de pizza: Receitas x Despesas
+            new Chart(document.getElementById('pieChart'), {
                 type: 'pie',
                 data: {
                     labels: ['Receitas', 'Despesas'],
                     datasets: [{
                         data: [receitas, despesas],
-                        backgroundColor: ['green', 'red']
+                        backgroundColor: ['#4CAF50', '#F44336'],
+                        borderColor: ['#388E3C', '#D32F2F'],
+                        borderWidth: 1
                     }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        title: {
+                            display: true,
+                            text: 'Distribuição Receitas x Despesas',
+                            font: {
+                                size: 16
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let value = context.raw;
+                                    let percentage = Math.round((value / (receitas + despesas)) * 100);
+                                    return `${context.label}: ${formatMoney(value)} (${percentage}%)`;
+                                }
+                            }
+                        }
+                    }
                 }
             });
+            
+            // Agrupa dados por mês para o gráfico de barras
+            const monthlyData = groupByMonth(data);
+            
+            // Gráfico de barras: Evolução mensal
+            new Chart(document.getElementById('barChart'), {
+                type: 'bar',
+                data: {
+                    labels: monthlyData.map(m => m.name),
+                    datasets: [
+                        {
+                            label: 'Receitas',
+                            data: monthlyData.map(m => m.receitas),
+                            backgroundColor: '#4CAF50',
+                            borderColor: '#388E3C',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Despesas',
+                            data: monthlyData.map(m => m.despesas),
+                            backgroundColor: '#F44336',
+                            borderColor: '#D32F2F',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: {
+                            grid: {
+                                display: false
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return 'R$ ' + value;
+                                }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        title: {
+                            display: true,
+                            text: 'Evolução Mensal',
+                            font: {
+                                size: 16
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.dataset.label}: ${formatMoney(context.raw)}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Erro ao carregar dados:', error);
+            alert('Erro ao carregar dados. Verifique o console para mais detalhes.');
         });
     </script>
 </body>
