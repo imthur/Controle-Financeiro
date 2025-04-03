@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <canvas id="financeChart"></canvas>
+    <script>
+        fetch('/api/transacoes/')
+        .then(response => response.json())
+        .then(data => {
+            let receitas = data.filter(t => t.tipo === 'R').reduce((sum, t) => sum + parseFloat(t.valor), 0);
+            let despesas = data.filter(t => t.tipo === 'D').reduce((sum, t) => sum + parseFloat(t.valor), 0);
+            
+            new Chart(document.getElementById('financeChart'), {
+                type: 'pie',
+                data: {
+                    labels: ['Receitas', 'Despesas'],
+                    datasets: [{
+                        data: [receitas, despesas],
+                        backgroundColor: ['green', 'red']
+                    }]
+                }
+            });
+        });
+    </script>
+</body>
+</html>
